@@ -20,4 +20,7 @@ hashtables.o: hashtables.cpp include/hashtables.h
 	$(CC) -c hashtables.cpp
 
 clean:
-	del game .\*.o
+	del game.exe .\*.o
+
+clean_obj:
+	del .\*.o

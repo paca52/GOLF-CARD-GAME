@@ -18,10 +18,11 @@ Cards get_random_card(Cards cards[]);
 std::vector<Cards> init_vector(std::vector <Cards> vec, Texture2D card_back, Cards cards[]);
 bool mouse_on_card(Cards tmp);
 void razmeni(Cards &a, Cards &b);
-void sort_me();
+void sort_me(std::vector <Cards> &v);
 
 void swap_cards_discard(Cards &tmp, Cards &temp);
 void swap_cards_me(Cards& tmp);
+void swap_two_cards(Cards &a, Cards &b);
 void calc_score();
 
 #endif // FUNCTIONS_H

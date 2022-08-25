@@ -7,6 +7,8 @@
 #include "include/hashtables.h"
 #include <stack>
 
+bool draw_gameover = false;
+
 int score_me = 0;
 int score_opp = 0;
 
@@ -15,8 +17,18 @@ bool draw_pile_card = false;
 bool pile_swap_mode = false;
 
 enum TURN {opponent, mine};
-
 TURN turn = mine;
+
+enum DIS { 
+	swap_a_card_on_the_field,
+	discard_the_drawn_card,
+	draw_card_from_the_pile,
+	take_the_card_from_the_discard_pile,
+	dis_has_been_done,
+	none
+};
+DIS dis = none;
+Cards *card_to_swap_with = NULL;
 
 std::stack <Cards> discard_pile;
 bool draw_discard_pile = false;
@@ -28,10 +40,10 @@ bool has_been_init = false;
 std::vector<Cards> me;
 std::vector<Cards> opp;
 
-int frame_count = 0;
-float timer = 0;
+int frame_count = 0, prev_frame_count = -1;
+float timer = 0, timer_for_end = 0;
 bool restart_timer = true;
-int dis = 0;
+// int dis = 0;
 
 void razmeni(Cards &a, Cards &b){
 	Cards tmp = a;
@@ -39,11 +51,11 @@ void razmeni(Cards &a, Cards &b){
 	b = tmp;
 }
 
-void sort_me(){
+void sort_me(std::vector <Cards> &v){
 	for(int i=0; i<5; i++)
 		for(int j=i+1; j<6; j++)
-			if(me[i].x >= me[j].x)
-				razmeni(me[i], me[j]);
+			if(v[i].x >= v[j].x)
+				razmeni(v[i], v[j]);
 }
 
 int calc_score_me(std::vector <Cards> v){
@@ -131,52 +143,282 @@ void swap_with_pile(Cards &card_to_swap, Cards cards[]){
 
 }
 
-int make_dis(){
-	Cards tmp = discard_pile.top();
+DIS make_dis(Cards **card_to_swap_with){
 
-	for(int i=0; i<6; i++)
-		if(tmp.index == opp[i].index){}
-			//dis = 
+	if(pile_card.selected && pile_card.face_up){
+		// checking to make 0s
+		for(int i=0; i<6; i+=2){
+			if(opp[i].face_up && opp[i+1].face_up && opp[i].index == opp[i+1].index)
+				continue;
+			
+			if(opp[i].face_up && opp[i].index == pile_card.index){
+				*card_to_swap_with = &opp[i+1];
+				return swap_a_card_on_the_field;
+			}
+
+			if(opp[i+1].face_up && opp[i+1].index == pile_card.index){
+				*card_to_swap_with = &opp[i];
+				return swap_a_card_on_the_field;
+			}
+		}
+
+		// opening the cards that are face down
+		for(int i=0; i<6; i+=2){
+			if(opp[i].face_up == false && opp[i+1].face_up == false){
+				if(*card_to_swap_with == NULL){
+					*card_to_swap_with = &opp[i + rand() % 2];
+					return swap_a_card_on_the_field;
+				}
+			}
+		}
+		// value checking 
+		for(int i=0; i<6; i+=2){
+			if(opp[i].face_up && opp[i+1].face_up && opp[i].index == opp[i+1].index)
+				continue;
+			
+			// if we found a way to make a 0, we do it
+			if(opp[i].face_up && opp[i].index == pile_card.index){
+				*card_to_swap_with = &opp[i];
+				return swap_a_card_on_the_field;
+			}
+			
+			// same here
+			if(opp[i+1].face_up && opp[i+1].index == pile_card.index){
+				*card_to_swap_with = &opp[i+1];
+				return swap_a_card_on_the_field;
+			}
+			
+			// if we found a card we want to swap with(that card and
+			// the draw pile) we set it to be card_to_swap_with,
+			// the second if is to check for the biggest one to get rid of
+			// (example between 9 and a Jack he should pick a Jack,
+			// regardless of their positions)
+			if(opp[i].face_up && opp[i].get_value() > pile_card.get_value()){
+				if(*card_to_swap_with == NULL)
+					*card_to_swap_with = &opp[i];
+				else if (( *card_to_swap_with )->get_value() < opp[i].get_value())
+					*card_to_swap_with = &opp[i];
+			}
+
+			// -||-
+			if(opp[i+1].face_up && opp[i+1].get_value() > pile_card.get_value()){
+				if(*card_to_swap_with == NULL)
+					*card_to_swap_with = &opp[i+1];
+				else if (( *card_to_swap_with )->get_value() < opp[i+1].get_value())
+					*card_to_swap_with = &opp[i+1];
+			}
+			
+		}
+
+		// if no card has been selected we throw the pile_card to the
+		// discard pile
+		if(*card_to_swap_with == NULL){
+			*card_to_swap_with = &pile_card;
+			return take_the_card_from_the_discard_pile;
+		}
+
+		return swap_a_card_on_the_field;
+	}
+
+	Cards discard_tmp = discard_pile.top();
+
+	// checking with the discard pile
+	for(int i=0; i<6; i+=2){
+		if(opp[i].face_up && opp[i+1].face_up){
+			// if we have two card that make 0 dont touch them
+			if(opp[i].index == opp[i+1].index)
+				continue;
+			
+			// if they dont make a zero, try to make it 
+			if(opp[i].index == discard_tmp.index){
+				*card_to_swap_with = &opp[i+1];
+				return take_the_card_from_the_discard_pile;
+			}
+
+			// same here with the other card
+			if(opp[i+1].index == discard_tmp.index){
+				*card_to_swap_with = &opp[i];
+				return take_the_card_from_the_discard_pile;
+			}
+
+		}
+		// should we swap with the face down card
+		else if(opp[i].face_up && opp[i].index == discard_tmp.index){
+			*card_to_swap_with = &opp[i+1];
+			return take_the_card_from_the_discard_pile;
+		}
+		// same here
+		else if(opp[i+1].face_up && opp[i+1].index == discard_tmp.index){
+			*card_to_swap_with = &opp[i];
+			return take_the_card_from_the_discard_pile;
+		}
+	}
+
+	// value checking with discard pile
+	for(int i=0; i<6; i+=2){
+		if(opp[i].face_up && opp[i+1].face_up && opp[i].index == opp[i+1].index)
+			continue;
+
+		if(opp[i].face_up && opp[i].get_value() > discard_tmp.get_value()){
+			if(*card_to_swap_with == NULL)
+				*card_to_swap_with = &opp[i];
+			else if( (*card_to_swap_with)->get_value() < opp[i].get_value())
+				*card_to_swap_with = &opp[i];
+		}
+
+		if(opp[i+1].face_up && opp[i+1].get_value() > discard_tmp.get_value()){
+			if(*card_to_swap_with == NULL)
+				*card_to_swap_with = &opp[i+1];
+			else if( (*card_to_swap_with)->get_value() < opp[i+1].get_value())
+				*card_to_swap_with = &opp[i+1];
+		}
+
+	}
+
+	if(*card_to_swap_with != NULL)
+		return take_the_card_from_the_discard_pile;
+
+	return draw_card_from_the_pile;
+}
+
+void swap_two_cards(Cards &a, Cards &b){
+	float a_x = a.x, a_y = a.y;	
+	float b_x = b.x, b_y = b.y;
+
+	Cards tmp = a;
+	a = b;
+	b = tmp;
+
+	a.x = a_x;
+	a.y = a_y;
+
+	b.x = b_x;
+	b.y = b_y;
+	b.face_up = true;
+	b.selected = false;
+	a.face_up = true;
+	a.selected = false;
+
 }
 
 void UPDATE_OPP(Cards cards[], Texture2D card_back[]){
 
-	if(frame_count != 0 && frame_count == 1)
-	{
-		std::cout << "thing one done!\n";
-		pile_card.face_up = true;
-		pile_card.selected = true;
-	}
-	if(frame_count != 0 && frame_count == 2){
-		swap_with_pile(opp[3], cards);	
-
+	if(dis == dis_has_been_done){
 		turn = mine;
 		restart_timer = true;
+		dis = none;
+		return;
 	}
 
+	if(dis == none){
+		dis = make_dis(&card_to_swap_with);
+		return;
+	}
+
+	// make a dis to take a look at the top card of the discard_pile
+	if(dis == draw_card_from_the_pile){
+		pile_card.face_up = true;
+		pile_card.selected = true;
+
+		dis = none;
+		return;
+	}
+	
+	// swap the selected card with the pile_card and send the swaped one to the discard_pile
+	if(dis == swap_a_card_on_the_field){
+		if(card_to_swap_with == NULL){
+			std::cout << "ERROR: card_to_swap_with == NULL when swaping the card on the field\n";
+			return;
+		}
+
+		discard_pile.push(*card_to_swap_with);
+		discard_pile.top().x = discard_pile_x;
+		discard_pile.top().y = discard_pile_y;
+		discard_pile.top().selected = false;
+		discard_pile.top().face_up = true;
+
+		float tmp_x = card_to_swap_with->x;
+		float tmp_y = card_to_swap_with->y;
+
+		*card_to_swap_with = pile_card;
+		card_to_swap_with->x = tmp_x;
+		card_to_swap_with->y = tmp_y;
+		card_to_swap_with->selected = false;
+		card_to_swap_with->face_up = true;
+
+		pile_card = get_random_card(cards);
+		pile_card.face_up = false;
+		pile_card.x = pile_x;
+		pile_card.y = pile_y;
+		pile_card.selected = false;
+
+		dis = dis_has_been_done;
+		return;
+	}
+
+	if(dis == take_the_card_from_the_discard_pile){
+		if(card_to_swap_with == NULL){
+			std::cout << "ERROR: card_to_swap_with == NULL" << std::endl;
+			return;
+		}
+
+		std::cout << "swaping...\n";
+
+		// if the card has been drawn and the computer deems it useless
+		// i set the card_to_swap_with to the pile_card and sent 
+		// the take_the_card_from_the_discard_pile dis
+		// and here it gets a new card if that's the case 
+		if(card_to_swap_with->x == pile_x && card_to_swap_with->y == pile_y){
+			swap_two_cards(*card_to_swap_with, discard_pile.top());
+			pile_card = get_random_card(cards);
+			pile_card.x = pile_x;
+			pile_card.y = pile_y;
+			pile_card.face_up = false;
+		}
+		// else it just wants to take the discard_pile card
+		else
+			swap_two_cards(*card_to_swap_with, discard_pile.top());
+
+		dis = dis_has_been_done;
+		card_to_swap_with = NULL;
+		return;
+	}
+	if(dis == draw_card_from_the_pile){
+		dis = dis_has_been_done;
+		std::cout << "DIS: DRAW A CARD\n";
+		return;
+	}
+}
+
+int game_over(std::vector <Cards> v){
+	int br = 0;
+	
+	for(Cards &tmp : v)
+		if(tmp.face_up)
+			br++;
+
+	return br;
 }
 
 void UPDATE(Cards cards[], Texture2D card_back[]){
 	// opponents turn
-	if(turn == opponent){
-		if(restart_timer){
-			frame_count = 0;
-			timer = 0;
-			restart_timer = false;
-			dis = make_dis();
-		}
-		UPDATE_OPP(cards, card_back);
+	if(turn == mine)
+		std::cout << "YOUR TURN\n";
+	else
+		std::cout << "NOT YOUR TURN\n";
 
-		timer += GetFrameTime();
+	if(game_over(me) == 6 || game_over(opp) == 6){
+		draw_gameover = true;
+		score_me = calc_score_me(me);
+		score_opp = calc_score_me(opp);
 
-		if(timer >= 3.0f){
-			timer = 0;
-			frame_count++;
-		}
+		for(Cards &tmp : me)
+			tmp.face_up = true;
 		
-		frame_count = frame_count % 100;
-		std::cout << "timer: " << timer << std::endl;
-		std::cout << "frame: " << frame_count << std::endl;
+		for(Cards &tmp : opp)
+			tmp.face_up = true;
+		
+		timer_for_end += GetFrameTime();
 		return;
 	}
 
@@ -207,13 +449,76 @@ void UPDATE(Cards cards[], Texture2D card_back[]){
 			opp.push_back(tmp);
 		}
 
-		sort_me();
+		sort_me(me);
+		sort_me(opp);
+		
+		std::cout << "OPP:\n";
+		for(Cards &tmp : opp)
+			std::cout << "\t(x, y) = (" << tmp.x << ", " << tmp.y << " )\n";
+
+		std::cout << "\nME:\n";
+		for(Cards &tmp : me)
+			std::cout << "\t(x, y) = (" << tmp.x << ", " << tmp.y << " )\n";
+
 		score_me = calc_score_me(me);
 
 		std::cout << me.size() << " <- size\n";
 		has_been_init = true;
 	}
 	
+	if(beginning == false && turn == opponent && draw_gameover == false){
+		if(restart_timer){
+			frame_count = 0;
+			timer = 0;
+			restart_timer = false;
+			dis = none;
+			card_to_swap_with = NULL;
+		}
+		switch(dis){
+			case 0:
+				std::cout << "swap_a_card_on_the_field\n";
+				break;
+			case 1:
+				std::cout << "discard_the_drawn_card\n";
+				break;
+			case 2:
+				std::cout << "draw_card_from_the_pile\n";
+				break;
+			case 3:
+				std::cout << "take_the_card_from_the_discard_pile\n";
+				break;
+			case 4:
+				std::cout << "dis_has_been_done\n";
+				break;
+			case 5:
+				std::cout << "none\n";
+				break;
+		}
+
+		// if the turn has been done just skip the waiting
+		if(dis == dis_has_been_done)
+			UPDATE_OPP(cards, card_back);
+
+		if(prev_frame_count != frame_count && frame_count % 2 == 0){
+			prev_frame_count = frame_count;
+			UPDATE_OPP(cards, card_back);
+			score_opp = calc_score_me(opp);
+		}
+
+		timer += GetFrameTime();
+
+		if(timer >= 2.0f){
+			timer = 0;
+			frame_count++;
+		}
+		
+		frame_count = frame_count % 100;
+		std::cout << "timer: " << timer << std::endl;
+		std::cout << "frame: " << frame_count << std::endl;
+		std::cout << std::endl;
+		return;
+	}
+
 	if(beginning == true){
 
 		//flip a cards in the beginning if it's clicked
@@ -253,9 +558,6 @@ void UPDATE(Cards cards[], Texture2D card_back[]){
 
 	}
 	else{
-		// checking if the game should end
-		// . . . 
-
 		if(draw_pile_card == false){
 
 			pile_card = get_random_card(cards);
@@ -267,22 +569,14 @@ void UPDATE(Cards cards[], Texture2D card_back[]){
 		}
 
 		if(discard_pile.empty()){
-			int index_tmp = rand() % 13;
-			int tmp = rand() % 4;
 
-			Cards new_card;
-			new_card.face_up = false;
-			new_card.face_texture = cards[tmp].face_texture;
-			new_card.index = index_tmp;
-			new_card.back_sel_texture = cards[tmp].back_texture;
-			new_card.back_texture = cards[tmp].back_texture;
+			Cards new_card = get_random_card(cards);
 			new_card.x = discard_pile_x;
 			new_card.y = discard_pile_y;
-			new_card.card_height = pile_card.card_height;
-			new_card.card_width = pile_card.card_width;
+			new_card.face_up = true;
+			new_card.selected = false;
 
 			draw_discard_pile = true;
-
 			discard_pile.push(new_card);
 		}
 
@@ -316,7 +610,7 @@ void UPDATE(Cards cards[], Texture2D card_back[]){
 					}
 			}
 
-			if(pile_card.selected == false && pile_card.face_up == false && discard_pile.size() > 1 && discard_pile.top().is_mouse_on_card() == true){
+			if(pile_card.selected == false && pile_card.face_up == false && discard_pile.empty() == false && discard_pile.top().is_mouse_on_card() == true){
 				discard_pile.top().selected = true;
 			}
 
@@ -379,14 +673,32 @@ void UPDATE(Cards cards[], Texture2D card_back[]){
 void DRAW(Cards cards[], Texture2D card_back[]){
 	// Draw
 	//----------------------------------------------------------------------------------
+	
+	if(draw_gameover && timer_for_end >= 10.0f){
+
+	BeginDrawing();
+
+		ClearBackground(BACK);
+		DrawText("GAME OVER", ((float)screenWidth / 2 - 30), (float)screenHeight / 4, 10, RED);
+		if(score_me < score_opp)
+			DrawText("YOU WON", (float)screenWidth / 2 - 15, (float)screenHeight / 2, 15, GREEN);
+		else if(score_opp < score_me)
+			DrawText("YOU LOST", (float)screenWidth / 2 - 15, (float)screenHeight / 2, 15, RED);
+		else
+			DrawText("DRAW", (float)screenWidth / 2 - 15, (float)screenHeight / 2, 15, GRAY);
+
+
+	EndDrawing();
+	return;	
+	}
 
 	BeginDrawing();
 
 		ClearBackground(BACK);
 
 		// playing field
-		DrawRectangle(screenWidth / 4, 0, screenWidth / 2, screenHeight / 2, { 230, 41, 55, 50 });
-		DrawRectangle(screenWidth / 4, screenHeight / 2, screenWidth / 2, screenHeight / 2, { 0, 121, 241, 50 });
+		DrawRectangle(screenWidth / 4, 0, screenWidth / 2, screenHeight / 2, { 230, 41, 55, (unsigned char)(50 + 50 * (turn == opponent)) });
+		DrawRectangle(screenWidth / 4, screenHeight / 2, screenWidth / 2, screenHeight / 2, { 0, 121, 241, (unsigned char)( 50 +(turn == mine)*50 )});
 
 		for(Cards &tmp : me)
 			tmp.draw_card();
@@ -423,6 +735,11 @@ void DRAW_MENU(bool& menu){
 			menu = false;
 			return;
 		}
+	}
+
+	if(IsKeyPressed(KEY_ENTER)){
+		menu = false;
+		return;
 	}
 
 	BeginDrawing();

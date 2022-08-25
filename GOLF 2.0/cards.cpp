@@ -37,8 +37,8 @@ Cards::Cards(char *type){
 	// full deck texture loading
 
 	char path[100] = "cards/";
-	strcat_s(path, type);
-	strcat_s(path, ".png");
+	strcat(path, type);
+	strcat(path, ".png");
 
 	face_texture = LoadTexture(path);
 	face_texture.height *= 4;
